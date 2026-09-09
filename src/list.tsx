@@ -19,11 +19,10 @@ interface Row {
   app: DesktopApp | undefined;
 }
 
-// Vicinae's builtin filtering doesn't reliably substring-match within a
-// slash-separated title like "application/json", so split the mime type
-// into its meaningful fragments and pass them as keywords too.
-function mimeKeywords(mimeType: string): string[] {
-  return [...new Set(mimeType.split(/[/+.-]/).filter(Boolean))];
+function matchesSearch(row: Row, query: string): boolean {
+  if (!query) return true;
+  const haystack = `${row.association.mimeType} ${row.app?.name ?? ''} ${row.association.defaultAppId ?? ''}`;
+  return haystack.toLowerCase().includes(query.toLowerCase());
 }
 
 function groupByCategory(rows: Row[]): [string, Row[]][] {
@@ -41,6 +40,7 @@ export default function Command() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -117,19 +117,26 @@ export default function Command() {
     );
   }
 
+  const visibleRows = rows.filter((row) => matchesSearch(row, searchText));
+
   return (
     <List
       isLoading={loading}
       navigationTitle="Default Applications"
       searchBarPlaceholder="Search mime types..."
+      onSearchTextChange={setSearchText}
     >
-      {rows.length === 0 && !loading && (
+      {visibleRows.length === 0 && !loading && (
         <List.EmptyView
           icon={Icon.QuestionMarkCircle}
-          title="No default applications configured"
+          title={
+            rows.length === 0
+              ? 'No default applications configured'
+              : 'No matches'
+          }
         />
       )}
-      {groupByCategory(rows).map(([category, categoryRows]) => (
+      {groupByCategory(visibleRows).map(([category, categoryRows]) => (
         <List.Section
           key={category}
           title={category}
@@ -140,7 +147,6 @@ export default function Command() {
               key={association.mimeType}
               title={association.mimeType}
               subtitle={app?.name ?? association.defaultAppId ?? 'Unknown'}
-              keywords={mimeKeywords(association.mimeType)}
               icon={app ? { fileIcon: app.path } : Icon.QuestionMarkCircle}
               actions={
                 <ActionPanel>
