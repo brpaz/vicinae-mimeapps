@@ -19,6 +19,13 @@ interface Row {
   app: DesktopApp | undefined;
 }
 
+// Vicinae's builtin filtering doesn't reliably substring-match within a
+// slash-separated title like "application/json", so split the mime type
+// into its meaningful fragments and pass them as keywords too.
+function mimeKeywords(mimeType: string): string[] {
+  return [...new Set(mimeType.split(/[/+.-]/).filter(Boolean))];
+}
+
 function groupByCategory(rows: Row[]): [string, Row[]][] {
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
@@ -133,6 +140,7 @@ export default function Command() {
               key={association.mimeType}
               title={association.mimeType}
               subtitle={app?.name ?? association.defaultAppId ?? 'Unknown'}
+              keywords={mimeKeywords(association.mimeType)}
               icon={app ? { fileIcon: app.path } : Icon.QuestionMarkCircle}
               actions={
                 <ActionPanel>
