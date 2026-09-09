@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { DesktopApp } from '../types';
+import { getAncestorMimeTypes } from './mime-hierarchy';
 
 function getAppDirs(): string[] {
   const dataHome =
@@ -88,9 +89,16 @@ export async function getAllDesktopApps(): Promise<DesktopApp[]> {
 export async function getAppsForMimeType(
   mimeType: string
 ): Promise<DesktopApp[]> {
-  const apps = await getAllDesktopApps();
+  const [apps, ancestors] = await Promise.all([
+    getAllDesktopApps(),
+    getAncestorMimeTypes(mimeType),
+  ]);
+  // An app that only declares a generic parent type (most editors just say
+  // text/plain, not every text-based format built on top of it) can still
+  // open this one — same resolution gio/xdg-mime use.
+  const acceptedTypes = [mimeType, ...ancestors];
   return apps
-    .filter((app) => app.mimeTypes.includes(mimeType))
+    .filter((app) => app.mimeTypes.some((type) => acceptedTypes.includes(type)))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
