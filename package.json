@@ -11,8 +11,8 @@
       "icon": "icon.png",
       "name": "list",
       "subtitle": "Mime Apps",
-      "title": "Default Applications",
-      "description": "Browse and change default apps for each mime type",
+      "title": "Mime Types",
+      "description": "Browse every known mime type and set its default app",
       "mode": "view"
     }
   ],

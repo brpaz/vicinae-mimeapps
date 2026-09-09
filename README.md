@@ -4,7 +4,7 @@
 
 ## 🎯 Features
 
-- Browse every configured default application, grouped by mime type category
+- Browse every mime type any installed app can open — not just ones with a default already set — grouped by category
 - Change the default app for any mime type, from a list of installed apps that declare support for it
 - Fall back to browsing every installed app if none declare support (or the declaration is wrong)
 - Reset a mime type back to the system-wide default
@@ -49,10 +49,10 @@ npm run dev
 
 ## 🧰 Usage
 
-Run **Default Applications** to see every mime type with a configured default, grouped by category (application, audio, image, text, video, inode, x-scheme-handler, ...). Search filters by mime type. From an entry:
+Run **Mime Types** to see every mime type known on your system — either because you've configured a default for it, or because some installed app declares it can open it — grouped by category (application, audio, image, text, video, inode, x-scheme-handler, ...). Search filters by mime type, app name, or desktop id. Mime types with no default yet show "No default set"; ones pointing at a `.desktop` id that no longer exists show a warning. From an entry:
 
 - **Set Default App** — pick an app from the ones that declare support for that mime type
-- **Reset to System Default** — remove your override
+- **Reset to System Default** — remove your override (only shown when one is set)
 - **Copy Mime Type**
 
 ## 📝 License

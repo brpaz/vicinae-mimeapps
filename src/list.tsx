@@ -1,6 +1,7 @@
 import {
   Action,
   ActionPanel,
+  Color,
   confirmAlert,
   Icon,
   List,
@@ -10,27 +11,33 @@ import {
 } from '@vicinae/api';
 import { useCallback, useEffect, useState } from 'react';
 import AppPicker from './components/app-picker';
-import type { DesktopApp, MimeAssociation } from './types';
-import { resolveAppById } from './utils/desktop-apps';
-import { getDefaultAssociations, removeDefaultApp } from './utils/mimeapps';
+import type { DesktopApp } from './types';
+import { getAllDesktopApps, resolveAppById } from './utils/desktop-apps';
+import {
+  categoryOf,
+  getDefaultAssociations,
+  removeDefaultApp,
+} from './utils/mimeapps';
 
 interface Row {
-  association: MimeAssociation;
-  app: DesktopApp | undefined;
+  mimeType: string;
+  category: string;
+  defaultAppId?: string;
+  app?: DesktopApp;
 }
 
 function matchesSearch(row: Row, query: string): boolean {
   if (!query) return true;
-  const haystack = `${row.association.mimeType} ${row.app?.name ?? ''} ${row.association.defaultAppId ?? ''}`;
+  const haystack = `${row.mimeType} ${row.app?.name ?? ''} ${row.defaultAppId ?? ''}`;
   return haystack.toLowerCase().includes(query.toLowerCase());
 }
 
 function groupByCategory(rows: Row[]): [string, Row[]][] {
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
-    const list = groups.get(row.association.category) ?? [];
+    const list = groups.get(row.category) ?? [];
     list.push(row);
-    groups.set(row.association.category, list);
+    groups.set(row.category, list);
   }
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
@@ -46,14 +53,33 @@ export default function Command() {
     setLoading(true);
     setError(null);
     try {
-      const associations = await getDefaultAssociations();
+      const [associations, allApps] = await Promise.all([
+        getDefaultAssociations(),
+        getAllDesktopApps(),
+      ]);
+      const defaultByMimeType = new Map(
+        associations.map((a) => [a.mimeType, a.defaultAppId])
+      );
+
+      // Every mime type that either has a configured default, or that at
+      // least one installed app declares it can open — not just the ones
+      // with an existing override — so types without a default yet (e.g.
+      // application/json if never explicitly set) are still discoverable.
+      const knownMimeTypes = new Set<string>([
+        ...defaultByMimeType.keys(),
+        ...allApps.flatMap((a) => a.mimeTypes),
+      ]);
+
       const resolved = await Promise.all(
-        associations.map(async (association) => ({
-          association,
-          app: association.defaultAppId
-            ? await resolveAppById(association.defaultAppId)
-            : undefined,
-        }))
+        [...knownMimeTypes].map(async (mimeType) => {
+          const defaultAppId = defaultByMimeType.get(mimeType);
+          return {
+            mimeType,
+            category: categoryOf(mimeType),
+            defaultAppId,
+            app: defaultAppId ? await resolveAppById(defaultAppId) : undefined,
+          };
+        })
       );
       setRows(resolved);
     } catch (err) {
@@ -122,18 +148,14 @@ export default function Command() {
   return (
     <List
       isLoading={loading}
-      navigationTitle="Default Applications"
+      navigationTitle="Mime Types"
       searchBarPlaceholder="Search mime types..."
       onSearchTextChange={setSearchText}
     >
       {visibleRows.length === 0 && !loading && (
         <List.EmptyView
           icon={Icon.QuestionMarkCircle}
-          title={
-            rows.length === 0
-              ? 'No default applications configured'
-              : 'No matches'
-          }
+          title={rows.length === 0 ? 'No mime types found' : 'No matches'}
         />
       )}
       {groupByCategory(visibleRows).map(([category, categoryRows]) => (
@@ -142,46 +164,57 @@ export default function Command() {
           title={category}
           subtitle={String(categoryRows.length)}
         >
-          {categoryRows.map(({ association, app }) => (
-            <List.Item
-              key={association.mimeType}
-              title={association.mimeType}
-              subtitle={app?.name ?? association.defaultAppId ?? 'Unknown'}
-              icon={app ? { fileIcon: app.path } : Icon.QuestionMarkCircle}
-              actions={
-                <ActionPanel>
-                  <Action
-                    title="Set Default App"
-                    icon={Icon.Pencil}
-                    onAction={() =>
-                      push(
-                        <AppPicker
-                          mimeType={association.mimeType}
-                          onChanged={refresh}
-                        />
-                      )
-                    }
-                  />
-                  <Action.CopyToClipboard
-                    title="Copy Mime Type"
-                    content={association.mimeType}
-                  />
-                  <Action
-                    title="Reset to System Default"
-                    icon={Icon.ArrowClockwise}
-                    style="destructive"
-                    onAction={() => resetDefault(association.mimeType)}
-                  />
-                  <Action
-                    title="Refresh"
-                    icon={Icon.ArrowClockwise}
-                    shortcut={{ modifiers: ['cmd'], key: 'r' }}
-                    onAction={refresh}
-                  />
-                </ActionPanel>
-              }
-            />
-          ))}
+          {categoryRows.map(({ mimeType, defaultAppId, app }) => {
+            const hasStaleReference = Boolean(defaultAppId) && !app;
+            const subtitle =
+              app?.name ??
+              (defaultAppId ? `${defaultAppId} (not found)` : 'No default set');
+            const icon = app
+              ? { fileIcon: app.path }
+              : hasStaleReference
+                ? { source: Icon.Warning, tintColor: Color.Orange }
+                : Icon.Circle;
+
+            return (
+              <List.Item
+                key={mimeType}
+                title={mimeType}
+                subtitle={subtitle}
+                icon={icon}
+                actions={
+                  <ActionPanel>
+                    <Action
+                      title="Set Default App"
+                      icon={Icon.Pencil}
+                      onAction={() =>
+                        push(
+                          <AppPicker mimeType={mimeType} onChanged={refresh} />
+                        )
+                      }
+                    />
+                    <Action.CopyToClipboard
+                      title="Copy Mime Type"
+                      content={mimeType}
+                    />
+                    {defaultAppId && (
+                      <Action
+                        title="Reset to System Default"
+                        icon={Icon.ArrowClockwise}
+                        style="destructive"
+                        onAction={() => resetDefault(mimeType)}
+                      />
+                    )}
+                    <Action
+                      title="Refresh"
+                      icon={Icon.ArrowClockwise}
+                      shortcut={{ modifiers: ['cmd'], key: 'r' }}
+                      onAction={refresh}
+                    />
+                  </ActionPanel>
+                }
+              />
+            );
+          })}
         </List.Section>
       ))}
     </List>
